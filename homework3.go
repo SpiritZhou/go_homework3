@@ -1,7 +1,7 @@
 package main
 import(
 	"fmt"
-	// "errors"
+	"errors"
     // "database/sql"
 	// "log"
 	"context"
@@ -14,33 +14,36 @@ import(
 )
 
 type App struct {
+	serv *http.Server
+	ctx context.Context
 }
 
-func serveApp() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
+func (a *App) Start() error {
+	a.serv = &http.Server{Addr: "0.0.0.0:8080"}
+	http.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
 		fmt.Fprintln(resp, "Hello, QCon!")
 	})
-	return http.ListenAndServe("0.0.0.0:8080", mux)
+	return a.serv.ListenAndServe()
 }
 
-func serveStop() error {
-	fmt.Println("server stop interrupt");
-	return nil;
+func (a *App) serveStop() error {
+	a.serv.Shutdown(a.ctx);
+	return errors.New("server stop interrupt");
 }
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
     group, errCtx := errgroup.WithContext(ctx)
 
-	// done := make(chan error, 1)	
+	a := new(App)
+	a.ctx = ctx
+
 	group.Go(func() error {
-		return serveApp()
+		return a.Start()
 	})
 	group.Go(func() error {
 		<-errCtx.Done()
-		fmt.Println("Server Error3")
-		serveStop()
+		a.serveStop()
 		cancel();
 		return nil;
 	})
@@ -49,7 +52,6 @@ func main() {
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 
 	group.Go(func() error {
-		fmt.Println("Server Error2")
 		for {
 			select {
 				case <-errCtx.Done():
@@ -60,7 +62,7 @@ func main() {
 		}
 	})
 
-	if err := group.Wait(); err == nil {
-		fmt.Println("Server Error")
+	if err := group.Wait(); err != nil {
+		fmt.Println(err)
 	}
 }
